@@ -1,0 +1,39 @@
+.topic-banner {
+  align-items: center;
+  background: linear-gradient(100deg, rgba(200, 255, 61, .09), rgba(200, 255, 61, .025));
+  border: 1px solid rgba(200, 255, 61, .28);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 160px 1fr;
+  margin-bottom: 14px;
+  padding: 18px 20px;
+}
+
+.topic-banner span {
+  color: #c8ff3d;
+  font: 700 9px 'Space Mono', monospace;
+  letter-spacing: 1px;
+}
+
+.topic-banner p {
+  color: #e1e5eb;
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.result-topic {
+  border-left: 2px solid #c8ff3d;
+  font-size: 13px !important;
+  margin-top: 24px;
+  padding-left: 14px;
+}
+
+.primary:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+@media (max-width: 760px) {
+  .topic-banner { grid-template-columns: 1fr; }
+}

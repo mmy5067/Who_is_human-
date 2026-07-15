@@ -1,0 +1,15 @@
+.feed-title em {
+  color: #4f5664;
+  font-style: normal;
+}
+
+.feed {
+  max-height: 720px;
+  scrollbar-color: #3d4553 transparent;
+}
+
+@media (max-width: 760px) {
+  .feed {
+    max-height: 560px;
+  }
+}

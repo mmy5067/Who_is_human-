@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090b10" />
+  <title>谁是人类？</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/feed-fix.css" />
+  <link rel="stylesheet" href="/topic.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <main>
+    <header class="topbar">
+      <a class="brand" href="#">HUMAN<span>?</span></a>
+      <div class="status"><i></i><span id="modeText">正在连接</span></div>
+    </header>
+
+    <section id="landing" class="screen landing active">
+      <div class="eyebrow">SOCIAL TURING TEST · 4 PLAYERS</div>
+      <h1>不要让它们<br><em>看出你是人类。</em></h1>
+      <p class="lead">三个 AI 正在观察你的措辞。混入它们，活过两次投票。回答得太像人，反而会输。</p>
+      <div class="rule-strip">
+        <div><b>01</b><span>依次发言</span></div><div><b>02</b><span>公开盘问</span></div><div><b>03</b><span>匿名投票</span></div><div><b>×2</b><span>存活即胜</span></div>
+      </div>
+      <button id="startBtn" class="primary">进入房间 <span>↗</span></button>
+      <p class="fine">你的座位与发言顺序将在开始时随机生成</p>
+    </section>
+
+    <section id="game" class="screen game">
+      <div class="game-head">
+        <div><span class="kicker" id="cycleLabel">ROUND 01</span><h2 id="phaseTitle">自由发言</h2></div>
+        <div class="phase-track"><span class="on"></span><span></span><span></span></div>
+      </div>
+      <div id="topicBanner" class="topic-banner"><span>本局社会议题</span><p>MiMo 正在生成议题…</p></div>
+      <div id="players" class="players"></div>
+      <div class="game-grid">
+        <section class="stage-card">
+          <div id="prompt" class="prompt"></div>
+          <div id="composer" class="composer hidden">
+            <textarea id="humanInput" maxlength="240" placeholder="输入你的发言…"></textarea>
+            <div class="compose-foot"><span id="count">0 / 240</span><button id="sendBtn">发送</button></div>
+          </div>
+          <div id="choice" class="choice hidden"></div>
+          <button id="advanceBtn" class="primary hidden">继续</button>
+        </section>
+        <aside class="feed-card">
+          <div class="feed-title"><span>PUBLIC CHANNEL <em>· 向上滚动查看完整记录</em></span><i id="liveDot"></i></div>
+          <div id="feed" class="feed"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="result" class="screen result">
+      <div id="resultHero" class="result-hero"></div>
+      <div class="reveal-head"><span>IDENTITY REVEAL</span><h2>摘下面具</h2></div>
+      <div id="reveals" class="reveals"></div>
+      <button id="restartBtn" class="primary">再玩一局 <span>↻</span></button>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

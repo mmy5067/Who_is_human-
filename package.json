@@ -1,0 +1,19 @@
+{
+  "name": "who-is-human",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node scripts/service.js start",
+    "stop": "node scripts/service.js stop",
+    "restart": "node scripts/service.js restart",
+    "status": "node scripts/service.js status",
+    "logs": "node scripts/service.js logs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0"
+  }
+}
