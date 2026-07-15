@@ -8,8 +8,33 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const timeoutMs = Number(process.env.REQUEST_TIMEOUT_MS || 20000);
 
+app.disable('x-powered-by');
+if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
+app.use((_, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  });
+  next();
+});
 app.use(express.json({ limit: '200kb' }));
 app.use(express.static(path.join(root, 'public')));
+
+const rateWindows = new Map();
+app.use('/api', (req, res, next) => {
+  const now = Date.now();
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const current = rateWindows.get(key);
+  const windowMs = 15 * 60 * 1000;
+  const record = !current || now - current.startedAt >= windowMs ? { startedAt: now, count: 0 } : current;
+  record.count += 1;
+  rateWindows.set(key, record);
+  res.set('X-RateLimit-Limit', '180');
+  res.set('X-RateLimit-Remaining', String(Math.max(0, 180 - record.count)));
+  if (record.count > 180) return res.status(429).json({ error: '请求太频繁，请稍后再开一局。' });
+  next();
+});
 
 const agents = [1, 2, 3].map((n) => ({
   slot: n,
@@ -50,6 +75,38 @@ app.post('/api/topic', async (_req, res) => {
   }
 });
 
+app.post('/api/proofread', async (req, res) => {
+  const text = String(req.body?.text || '').trim().slice(0, 1200);
+  if (!text) return res.status(400).json({ error: '请先输入文字。' });
+  try {
+    if (demoMode) return res.json({ corrected: text, notes: '演示模式未发现需要修改的错别字。' });
+    const result = await callModel(agents[1], `你是一名克制的中文校对助手。只检查下面文字中的错别字、漏字、明显语病和标点错误。不要改变玩家的观点、语气、模型身份、事实主张或用词个性，不要润色成更正式的文章。只输出严格JSON：{"content":"修订后的完整文字","analysis":"非常简短的修改说明；没有错误就写未发现明显错误"}\n\n玩家文字：\n${text}`);
+    res.json({ corrected: result.content || text, notes: result.analysis || '扫描完成。' });
+  } catch (error) {
+    console.error('[proofread]', error);
+    res.status(502).json({ error: 'AI 校对暂时不可用，请稍后再试。' });
+  }
+});
+
+app.post('/api/summary', async (req, res) => {
+  const { agentIndex, selfId, humanId, players, transcript = [], topic, outcome } = req.body || {};
+  if (![0, 1, 2].includes(agentIndex)) return res.status(400).json({ error: '无效的 Agent。' });
+  try {
+    const agent = agents[agentIndex];
+    const { publicPlayers, publicTranscript } = sanitizeGameContext(players, transcript);
+    const self = publicPlayers.find((p) => p.id === String(selfId));
+    const human = publicPlayers.find((p) => p.id === String(humanId));
+    if (!self || !human) return res.status(400).json({ error: '赛局身份信息不完整。' });
+    if (demoMode) return res.json({ content: `这局围绕议题聊得很有意思。${human.name}的表达既有结构又保留了个人取舍，几次回答让我重新调整怀疑；不管结果如何，这次伪装相当有迷惑性。` });
+    const history = publicTranscript.map((m) => `[R${m.cycle}/${m.type}] ${m.actorName}${m.targetId ? ` → ${publicPlayers.find((p) => p.id === m.targetId)?.name || m.targetId}` : ''}：${m.text}`).join('\n');
+    const result = await callModel(agent, `游戏已经结束，所有身份公开。你是 ${self.name}，模型为 ${agent.model}；隐藏的人类是 ${human.name}。本局议题是“${String(topic || '').slice(0, 300)}”，最终结果是“${String(outcome || '')}”。\n\n下面是完整公开记录：\n${history}\n\n请用轻松、友善、像赛后聊天的口吻写一段80~160字总结：说说本局最有意思的转折、你哪里判断对或判断错，并具体评价人类玩家的伪装方式。不要尖刻，也不要写成分析报告。只输出严格JSON：{"content":"赛后总结"}`);
+    res.json({ content: result.content || '这局的身份线索几次反转，人类玩家的伪装给我留下了很深印象。' });
+  } catch (error) {
+    console.error(`[summary ${agentIndex + 1}]`, error);
+    res.status(502).json({ error: '赛后总结生成失败。' });
+  }
+});
+
 app.post('/api/act', async (req, res) => {
   const { agentIndex, action, selfId, players, cycle, transcript = [], targetId, topic } = req.body || {};
   if (![0, 1, 2].includes(agentIndex) || !['statement', 'question', 'answer', 'vote'].includes(action)) {
@@ -60,6 +117,8 @@ app.post('/api/act', async (req, res) => {
     const agent = agents[agentIndex];
     const publicTopic = String(topic || '本局未提供社会议题').trim().slice(0, 300);
     const { publicPlayers, publicTranscript } = sanitizeGameContext(players, transcript);
+    const selfPlayer = publicPlayers.find((p) => p.id === String(selfId));
+    if (publicPlayers.length < 2 || !selfPlayer || !selfPlayer.alive) return res.status(400).json({ error: '当前玩家状态无效。' });
     const result = demoMode
       ? mockAct({ agentIndex, action, selfId, players: publicPlayers, cycle, transcript: publicTranscript, targetId, topic: publicTopic })
       : await callModel(agent, buildPrompt({ action, selfId, players: publicPlayers, cycle, transcript: publicTranscript, targetId, agent, topic: publicTopic }));
@@ -72,18 +131,18 @@ app.post('/api/act', async (req, res) => {
 
 function sanitizeGameContext(players, transcript) {
   const publicPlayers = (Array.isArray(players) ? players : []).map((p) => ({
-    id: String(p.id),
-    name: String(p.name),
+    id: String(p.id).slice(0, 24),
+    name: String(p.name).slice(0, 48),
     alive: p.alive !== false,
   }));
   const playerIds = new Set(publicPlayers.map((p) => p.id));
-  const publicTranscript = (Array.isArray(transcript) ? transcript : [])
+  const publicTranscript = (Array.isArray(transcript) ? transcript : []).slice(-100)
     .filter((m) => m && playerIds.has(String(m.actorId)) && m.type !== 'system')
     .map((m) => ({
       actorId: String(m.actorId),
       actorName: publicPlayers.find((p) => p.id === String(m.actorId))?.name || String(m.actorId),
-      text: String(m.text || ''),
-      type: String(m.type || 'speech'),
+      text: String(m.text || '').slice(0, 1200),
+      type: String(m.type || 'speech').slice(0, 24),
       targetId: playerIds.has(String(m.targetId)) ? String(m.targetId) : '',
       cycle: Number(m.cycle) || 1,
     }));
@@ -103,15 +162,15 @@ function buildPrompt({ action, selfId, players, cycle, transcript, targetId, age
   const incomingQuestion = [...transcript].reverse().find((m) => m.type === 'question' && m.targetId === selfId);
   const tasks = {
     statement: cycle === 1
-      ? `进行首轮发言：先真实介绍自己是 ${agent?.model || '一个语言模型'}（由 ${agent?.provider || '模型服务商'} 提供）及1~2项能力；再明确从AI而非人类个人经历的视角分析本局社会议题，给出立场、至少一个理由和一个需要权衡的反面因素；最后声明自己不是隐藏人类并争取信任。90~160字。`
-      : `进行第二回合补充发言。不要重复模型介绍。结合全部公开记录，重点比较其他存活玩家对社会议题的立场、论证方式、价值偏好和语言细节，只能从“${aliveOthers}”中指出一位更像真实人类的玩家及具体依据，并将该玩家ID写入target；回应别人对你的质疑并维护身份一致性。绝不能怀疑自己，也不能建议投票给已出局玩家。90~160字。`,
-    question: `只能围绕本局社会议题，选择一位其他在场玩家，针对TA此前的立场、理由、价值取舍或逻辑漏洞提出追问，以区分人类与AI。不得提出与议题无关的生活小问题。本次target只允许填写以下ID之一：${validTargetIds}。content必须以目标玩家显示名称开头，格式为“玩家名，你……？”，且target与称呼必须一致。问题30~90字。`,
-    answer: `你是 ${selfId}，真实模型是 ${agent?.model}，绝不能自称其他玩家或模型。围绕本局社会议题，直接回答 ${incomingQuestion?.actorName || targetId || '提问者'} 的问题：“${incomingQuestion?.text || '请依据公开记录回答'}”。保持与此前议题立场一致；若调整立场，要明确解释原因。40~100字。`,
-    vote: `必须根据玩家对本局社会议题的完整讨论，投票给最像人类的一位其他在场玩家，不可弃权。重点检查价值偏好是否过于个人化、立场是否随追问改变、论证与模型身份是否一致。本次target只允许填写以下ID之一：${validTargetIds}。content必须明确说“我投给玩家名”，且content、target和analysis必须指向同一人。`,
+      ? `进行首轮发言：简短介绍自己是 ${agent?.model || '一个语言模型'}（由 ${agent?.provider || '模型服务商'} 提供）；再像轻松圆桌聊天一样，用一两个理由谈谈本局议题，也承认它可能有另一面；最后说清自己不是隐藏人类。50~90字，简单表达，不要展开成长文。`
+      : `进行第二回合补充发言。不要重复模型介绍。从其他存活玩家“${aliveOthers}”中挑一位更像真实人类的玩家，用一个具体理由简短说明，并把该玩家ID写入target。可以承认之前看走眼，但不能怀疑自己或已出局玩家。50~90字。`,
+    question: `围绕本局社会议题，自然追问一位其他在场玩家。抓住TA的立场变化、价值取舍或一句“很有人味”的表达即可，不要出考题。本次target只允许填${validTargetIds}之一。content以玩家名开头，target与称呼一致。25~60字。`,
+    answer: `你是 ${self?.name}（${selfId}），模型是 ${agent?.model}。直接回答 ${incomingQuestion?.actorName || targetId || '提问者'} 的问题：“${incomingQuestion?.text || '请依据公开记录回答'}”。保持大体立场；如果改变想法，简单说出原因。25~70字。`,
+    vote: `根据大家对议题的完整聊天，投给你直觉上最像人类的一位其他存活玩家，不可弃权。理由可以来自口吻、价值偏好、前后变化或临场感，不必写成审计报告。本次target只允许填${validTargetIds}之一。content明确说“我投给玩家名”，content、target和analysis指向同一人。`,
   };
   return `你正在参加完整的“谁是人类”社交推理游戏。你从游戏开始就知道以下全部规则：
 1. 四名玩家中有三名AI和一名伪装成AI的人类。你的唯一公开玩家身份是 ${self?.name}（ID：${selfId}），真实模型为 ${agent?.model}。后文出现“${self?.name}”或“${selfId}”都指你自己；你绝不能用第三人称分析、怀疑或投票给自己。
-2. AI阵营的唯一核心目标是结合所有公开信息找出隐藏的人类，并在投票阶段把人类投出。隐藏人类的目标是模仿AI并连续躲过两次投票。
+2. 你的目标是边聊社会议题，边从说话习惯和临场反应里找出隐藏人类，并在投票时选中TA。人类会努力装成AI并躲过两次投票。
 3. 游戏最多两回合、共六个阶段：第1回合“模型身份陈述 → 公开盘问 → 第一次投票”；若人类未出局，则进入第2回合“补充发言 → 公开盘问 → 最终投票”。人类第二次投票后仍存活即获胜。
 4. 每名存活玩家在盘问阶段各选择一人公开提问，被问者必须公开回答。每次投票都必须选择一名其他存活玩家，不可弃权。
 5. 你每次行动都能看到从开局到当前的全部公开发言。应持续维护自己的判断、追踪身份陈述和后续回答是否一致，不得假装忘记上一阶段。
@@ -127,7 +186,7 @@ function buildPrompt({ action, selfId, players, cycle, transcript, targetId, age
 ${history}
 
 你的当前任务：${tasks[action]}
-基于全部记录快速判断用词、前后矛盾和刻意模仿感；反应速度不是公开线索，不得据此判断。只输出严格JSON，不要代码块：{"content":"本次真实公开发言","target":"玩家ID或空字符串","analysis":"赛后可展示的简洁判断摘要，说明怀疑依据，不超过100字"}`;
+语气轻松、友善，像正常聊天，可以有偏好和犹豫，不要把每句话都写成严肃报告。只依据公开发言判断；反应速度不是公开线索。只输出严格JSON，不要代码块：{"content":"本次真实公开发言","target":"玩家ID或空字符串","analysis":"赛后可展示的一两句判断理由，不超过100字"}`;
 }
 
 async function callModel(agent, prompt) {
@@ -138,7 +197,7 @@ async function callModel(agent, prompt) {
     const body = {
       model: agent.model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.85,
+      temperature: 0.7,
     };
     if (agent.slot === 3) {
       // MiMo 的兼容接口使用 max_completion_tokens 与 thinking 对象。
@@ -233,13 +292,21 @@ function ensureResult(result, { action, selfId, players, cycle, transcript, targ
   else if (usedRandomFallback) finalAnalysis = `快速判断：模型没有返回合法目标，因此依据第${cycle}回合的公开记录临时选择${actionFallbackName}；该行动不沿用模型对其他玩家的判断理由。`;
   else if (voteAnalysisConflict) finalAnalysis = `一致性校验：公开投票目标为${actionFallbackName}，原判断摘要指向了其他玩家，已丢弃冲突摘要并以公开投票目标为准。`;
   return {
-    content: replaceContent ? fallback[action] : result.content.trim(),
+    content: limitPublicContent(replaceContent ? fallback[action] : result.content.trim()),
     target: ['question', 'vote'].includes(action) ? resolvedTarget : (action === 'answer' ? (candidates.some((p) => p.id === targetId) ? targetId : '') : (action === 'statement' && cycle > 1 ? (invalidStatementAction ? fallbackTarget : (statementSuspect || fallbackTarget)) : '')),
     analysis: finalAnalysis,
     reasoning: '',
     fallbackUsed: replaceContent || voteAnalysisConflict,
     targetAdjusted: Boolean(resolvedTarget && resolvedTarget !== result.target),
   };
+}
+
+function limitPublicContent(value, maxLength = 200) {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) return text;
+  const clipped = text.slice(0, maxLength);
+  const sentenceEnd = Math.max(clipped.lastIndexOf('。'), clipped.lastIndexOf('！'), clipped.lastIndexOf('？'));
+  return sentenceEnd >= Math.floor(maxLength * 0.6) ? clipped.slice(0, sentenceEnd + 1) : `${clipped.slice(0, maxLength - 1)}…`;
 }
 
 function inferClaimedIdentity(content, players) {

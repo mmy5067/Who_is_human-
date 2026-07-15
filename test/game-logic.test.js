@@ -143,3 +143,11 @@ test('合法第二回合行动保持目标和内容', () => {
   assert.equal(result.content, content);
   assert.equal(result.fallbackUsed, false);
 });
+
+test('所有公开行动强制限制在200字以内', () => {
+  const result = ensureResult(
+    { content: `我是mimo-v2.5-pro。${'这是一段用于测试公开发言长度限制的内容。'.repeat(20)}`, target: '', analysis: '长度测试。' },
+    { action: 'statement', selfId: 'P4', players, cycle: 1, transcript, targetId: '', agent: agents[2], topic },
+  );
+  assert.ok(result.content.length <= 200);
+});
