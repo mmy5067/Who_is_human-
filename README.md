@@ -32,6 +32,19 @@ Key 仍为占位符时会自动进入演示模式。若只想测试某个真实�
 
 为缩短整局等待时间，三个模型默认关闭深度思考，不展示内部思维链。
 
+## 项目结构
+
+服务端入口只负责 HTTP：
+
+- `server.js`：路由、中间件与错误边界。
+- `src/model-client.js`：三家 OpenAI 兼容接口的请求与 JSON 解析。
+- `src/game/context.js`：玩家、聊天记录和逐轮赛果清洗。
+- `src/game/prompts.js`：行动与赛后总结提示词。
+- `src/game/action-result.js`：身份校验、目标解析和安全兜底。
+- `src/game/mock.js`：演示模式 Agent。
+
+浏览器端由 `public/app.js` 推进界面流程，`public/game-state.js` 保存纯状态初始化、洗牌和计票逻辑。纯游戏逻辑均可通过 `npm test` 独立验证。
+
 ## 公开部署提示
 
 服务端不会向浏览器返回 API Key，并对 `/api` 请求提供了基础的 IP 限流、输入长度限制与安全响应头。部署在 Nginx、Cloudflare 等反向代理之后时，在 `.env` 设置 `TRUST_PROXY=true`，让限流读取真实客户端 IP。基础内存限流适合小规模网站；正式开放给大量用户前，建议换成 Redis 限流并增加登录、验证码或用量配额。
