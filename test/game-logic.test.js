@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agents } from '../src/config.js';
 import { ensureResult } from '../src/game/action-result.js';
 import { sanitizeGameContext, sanitizeRoundResults } from '../src/game/context.js';
 import { buildActionPrompt, buildPostgameFallback, buildPostgamePrompt } from '../src/game/prompts.js';
+
+// Rule tests use fixed model identities, independent of the developer's .env.
+const agents = [
+  { model: 'ecnu-max', provider: 'ECNU / DeepSeek' },
+  { model: 'qwen3.7-plus', provider: '阿里云百炼' },
+  { model: 'mimo-v2.5-pro', provider: 'Xiaomi MiMo' },
+];
 
 const topic = '公共决策是否应该主要依赖算法量化评分？';
 const players = [

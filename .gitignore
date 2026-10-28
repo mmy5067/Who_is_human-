@@ -1,4 +1,14 @@
 node_modules/
 .env
+.env.*
+!.env.example
 npm-debug.log*
 .runtime/
+coverage/
+*.log
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

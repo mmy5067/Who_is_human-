@@ -2,8 +2,13 @@
   "name": "who-is-human",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "type": "module",
   "scripts": {
+    "serve": "node server.js",
     "dev": "node --watch server.js",
     "start": "node scripts/service.js start",
     "stop": "node scripts/service.js stop",
